@@ -27,20 +27,10 @@ public class J2r {
      * @param args the command line arguments
      */
     public static void main(String[] args) throws IOException {
-        estrutura("/opt/fastway/fastdialer_monitor/src/", "/opt/fastway/java2rust/fastdialer-monitor-rust/src/");
+        compileProject("/opt/fastway/fastdialer_monitor/src/", "/opt/fastway/java2rust/fastdialer-monitor-rust/src/");
 	
-        //converteKernel();
-        
-        //converte("/opt/fastway/fastdialer_monitor/src/fastdialer/FastDialer.java", "/opt/fastway/java2rust/fastdialer-monitor-rust/src/fastdialer/FastDialer.rs");
+        compile("/opt/fastway/fastdialer_monitor/src/fastdialer/FastDialer.java", "/opt/fastway/java2rust/fastdialer-monitor-rust/src/fastdialer/FastDialer.rs");
        
-        //converte("/opt/fastway/fastdialer_monitor/src/fastdialer/fastagi/script/Dialplan.java", "/opt/fastway/java2rust/fastdialer-monitor-rust/src/fastdialer/fastagi/script/Dialplan.rs");
-        
-//        converte ("/opt/fastway/java2rust/samples/Employee.java", "/opt/fastway/java2rust/samples/Employee.rs");
-        
-//        converte ("/opt/fastway/fastdialer_monitor/src/fastdialer/dao/DbExternoDAO.java", "/opt/fastway/java2rust/samples/DbExternoDAO.rs");
-        
-//        converte ("/opt/fastway/fastdialer_monitor/src/fastdialer/gotoiftimeproject/GotoIfTime.java", "/opt/fastway/java2rust/samples/GotoIfTime.rs");
-        
         System.out.println("\n\n FIM DO PROCESSAMENTO!!!");
     }
     
@@ -69,7 +59,7 @@ public class J2r {
         return programa;
     }
 
-    private static void estrutura(String srcPath, String dstPath) {
+    private static void compileProject(String srcPath, String dstPath) {
         File src = new File(srcPath);
         
         //nao processao o srcPath em si, apenas o seus filhos
@@ -152,18 +142,7 @@ public class J2r {
         }
     }
 
-    private static void converteKernel() {
-        String src;
-        try {
-            src = translate("/opt/fastway/fastdialer_monitor/src/fastdialer/Kernel.java");
-            estruturaCreateFile("/opt/fastway/java2rust/fastdialer-monitor-rust/src/fastdialer/Kernel.rs", src);
-        } catch (IOException ex) {
-            Logger.getLogger(J2r.class.getName()).log(Level.SEVERE, null, ex);
-        }
-        
-    }
-
-    private static void converte(String srcFileName, String dstFileName) {
+    private static void compile(String srcFileName, String dstFileName) {
         String src;
         try {
             src = translate(srcFileName);
