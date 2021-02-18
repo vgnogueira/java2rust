@@ -27,12 +27,33 @@ public class J2r {
      * @param args the command line arguments
      */
     public static void main(String[] args) throws IOException {
-        compileProject("/opt/fastway/fastdialer_monitor/src/", "/opt/fastway/java2rust/fastdialer-monitor-rust/src/");
+        //compileProject("/opt/fastway/fastdialer_monitor/src/", "/opt/fastway/java2rust/fastdialer-monitor-rust/src/");
 	
-        compile("/opt/fastway/fastdialer_monitor/src/fastdialer/FastDialer.java", "/opt/fastway/java2rust/fastdialer-monitor-rust/src/fastdialer/FastDialer.rs");
+        //compile("/opt/fastway/fastdialer_monitor/src/fastdialer/FastDialer.java", "/opt/fastway/java2rust/fastdialer-monitor-rust/src/fastdialer/FastDialer.rs");
        
+        compileAT("/opt/fastway/java2rust/samples/Employee.java", "/opt/fastway/java2rust/samples/Employee.rs");
+        
         System.out.println("\n\n FIM DO PROCESSAMENTO!!!");
     }
+    
+    public static String translateAT(String javaFileName) throws FileNotFoundException, IOException {
+        // create a CharStream that reads from standard input
+        ANTLRInputStream input = new ANTLRInputStream(new FileInputStream(javaFileName));
+        // create a lexer that feeds off of input CharStream
+        Java9Lexer lexer = new Java9Lexer(input);
+        // create a buffer of tokens pulled from the lexer
+        CommonTokenStream tokens = new CommonTokenStream(lexer);
+        // create a parser that feeds off the tokens buffer
+        Java9Parser parser = new Java9Parser(tokens);
+        ParseTree tree = parser.compilationUnit(); // begin parsing at init rule
+
+        J2rAbstractTree j = new J2rAbstractTree();
+        j.visit(tree);
+        
+        return "";
+    }
+    
+    
     
     public static String translate(String javaFileName) throws FileNotFoundException, IOException {
         // create a CharStream that reads from standard input
@@ -50,7 +71,9 @@ public class J2r {
         // Walk the tree created during the parse, trigger callbacks
         //walker.walk(new J2rFull(), tree);
         //walker.walk(new Java2RustPOC(), tree);
-        J2rFull j = new J2rFull();
+        
+        
+        J2rDirectTranslation j = new J2rDirectTranslation();
         j.visit(tree);
         
         String programa = "#![allow(non_snake_case)]\n\n"
@@ -142,6 +165,17 @@ public class J2r {
         }
     }
 
+    private static void compileAT(String srcFileName, String dstFileName) {
+        String src;
+        try {
+            src = translateAT(srcFileName);
+            estruturaCreateFile(dstFileName, src);
+        } catch (IOException ex) {
+            Logger.getLogger(J2r.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
+    }    
+    
     private static void compile(String srcFileName, String dstFileName) {
         String src;
         try {

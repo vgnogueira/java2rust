@@ -3,7 +3,10 @@
     <editor-bookmarks xmlns="http://www.netbeans.org/ns/editor-bookmarks/2" lastBookmarkId="0"/>
     <open-files xmlns="http://www.netbeans.org/ns/projectui-open-files/2">
         <group>
+            <file>file:/opt/fastway/java2rust/j2r/src/j2r/J2rFull.java</file>
             <file>file:/opt/fastway/java2rust/j2r/src/j2r/J2r.java</file>
+            <file>file:/opt/fastway/java2rust/j2r/src/j2r/J2rAbstractTree.java</file>
+            <file>file:/opt/fastway/java2rust/j2r/src/j2r/Java9BaseVisitor.java</file>
         </group>
     </open-files>
 </project-private>

@@ -7,7 +7,7 @@ package j2r;
 
 import java.util.Iterator;
 
-public class J2rFull extends Java9BaseVisitor<Integer> {
+public class J2rDirectTranslation extends Java9BaseVisitor<Integer> {
 
     SourceBuffer createStruct;
     SourceBuffer construtorX;
@@ -17,7 +17,7 @@ public class J2rFull extends Java9BaseVisitor<Integer> {
     SourceBuffer currentBuffer;
     private String nomeClasse;
     
-    public J2rFull() {
+    public J2rDirectTranslation() {
         createStruct = new SourceBuffer();
         construtorX = new SourceBuffer();
         struct = new SourceBuffer();
