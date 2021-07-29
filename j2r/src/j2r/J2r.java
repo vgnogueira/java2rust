@@ -31,7 +31,11 @@ public class J2r {
 	
         //compile("/opt/fastway/fastdialer_monitor/src/fastdialer/FastDialer.java", "/opt/fastway/java2rust/fastdialer-monitor-rust/src/fastdialer/FastDialer.rs");
        
-        compileAT("/opt/fastway/java2rust/samples/Employee.java", "/opt/fastway/java2rust/samples/Employee.rs");
+        //compileAT("/opt/fastway/fastdialer_monitor/src/fastdialer/dao/AcaoDAO.java", "/home/fastway/myprojects/java2rust/samples/Employee.rs");
+        
+        
+        compileAT("/opt/fastway/fastdialer_monitor/src/fastdialer/RunCampanha.java", "/home/fastway/myprojects/java2rust/samples/Employee.rs");
+        
         
         System.out.println("\n\n FIM DO PROCESSAMENTO!!!");
     }
@@ -49,6 +53,10 @@ public class J2r {
 
         J2rAbstractTree j = new J2rAbstractTree();
         j.visit(tree);
+        j.generate();
+        
+        
+        
         
         return "";
     }
