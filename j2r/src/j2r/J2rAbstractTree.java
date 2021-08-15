@@ -12,15 +12,10 @@ import org.antlr.v4.runtime.tree.ParseTree;
 
 public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
 
-    private String className;
-    private List<VarDecl> fields = new ArrayList<>();
+    private String className = "no_name";
     private List<MethodDecl> metodos = new ArrayList<>();
     private ProgramBuffer rs;
-    
-    private List<VarDecl> getParametros(Java9Parser.FormalParameterListContext formalParameterList) {
-        //TODO:
-        return new ArrayList<>();
-    }
+    private List<VarDecl> fields = new ArrayList<>();
 
     public class Node {
         Node parentNode;
@@ -30,12 +25,14 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
     }
 
     public class VarDecl {
-        String nome;
         String tipo;
-        String init;
+        Java9Parser.VariableDeclaratorContext campo;
+        private final String nome;
 
-        private VarDecl(String nome, String tipo, String init) {
-            this.nome=nome;this.tipo=tipo;this.init=init;
+        private VarDecl(String nome, String tipo, Java9Parser.VariableDeclaratorContext campo) {
+            this.nome = nome;
+            this.tipo = tipo;
+            this.campo = campo;
         }
     }
     
@@ -53,8 +50,9 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
     }    
     
     @Override public Integer visitFieldDeclaration(Java9Parser.FieldDeclarationContext ctx) { 
-        for (ParseTree campo: ctx.variableDeclaratorList().children) {
-            fields.add(new VarDecl(campo.getText(), ctx.unannType().getText(), ""));
+        for (Java9Parser.VariableDeclaratorContext campo: ctx.variableDeclaratorList().variableDeclarator()) {
+            
+            fields.add(new VarDecl(campo.variableDeclaratorId().identifier().getText(), ctx.unannType().getText(), campo));
         }
         
         return 1;
@@ -76,11 +74,59 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
     public String generate() {
             rs = new ProgramBuffer();
 
-            rs.append("struct ").append(className).append(" {\n");
-
-
+            
+            rs.append("\n\n");
+            rs.append("use crate::java_compat::{System, Thread};\n\n");
+            
+            rs.append("#[allow(non_snake_case)]\n");
+            rs.append("pub struct ").append(className).append(" {\n");
+            rs.nivelIn();
+            
+            for (VarDecl f: fields) {
+                rs.append(f.campo.variableDeclaratorId().getText());
+                rs.append(": ");
+                rs.append(rustType(f.tipo));
+                        
+                if (f.campo.variableInitializer()!=null) {
+                    rs.append(" /* = ");
+                    generateExpression(f.campo.variableInitializer().expression());
+                    rs.append(" */");
+                }
+                rs.append(",\n");
+            }
+            rs.nivelOut();
             rs.append("}\n\n");
 
+            //CONSTRUTOR BASICO
+            rs.append("#[allow(non_snake_case)]\n");
+            rs.append("pub fn new_").append(className).append("() -> ").append(className).append(" {\n");
+            rs.nivelIn();
+            rs.append(className).append(" {\n");
+            rs.nivelIn();
+            
+            for (VarDecl f: fields) {
+                rs.append(f.campo.variableDeclaratorId().getText());
+                rs.append(": ");
+                        
+                if (f.campo.variableInitializer()!=null) {
+                    generateExpression(f.campo.variableInitializer().expression());
+                } else {
+                    switch (f.tipo) {
+                        case "long": rs.append("0"); break;
+                        case "boolean": rs.append("false"); break;
+                        case "String": rs.append("\"\".to_string()"); break;
+                        default: rs.append(" ()");
+                    }
+                }
+                rs.append(" /* ").append(f.tipo).append(" */");
+                rs.append(",\n");
+            }
+            rs.nivelOut();
+            rs.append("}\n\n");            
+            rs.nivelOut();
+            rs.append("}\n\n");
+            
+            //IMPLEMENTACAO
             rs.append("impl ").append(className).append(" {\n");
 
             generateMethods();
@@ -98,14 +144,17 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         for (MethodDecl m: metodos) {
             rs.append("\n");
             //identa();
-            rs.append("fn ").append(m.nome).append("(&self");
+            rs.append("#[allow(non_snake_case)]\n");
+            rs.append("#[allow(dead_code)]\n");
+            rs.append("#[allow(unused_variables)]\n");
+            rs.append("fn ").append(m.nome).append("(&mut self");
             if (m.parametros!=null) {
                 if (m.parametros.formalParameters()!=null) {
                     for (Java9Parser.FormalParameterContext p: m.parametros.formalParameters().formalParameter()) {
                         rs.append(", ");
                         rs.append(p.variableDeclaratorId().identifier().getText());
                         rs.append(": ");
-                        rs.append(p.unannType().getText());
+                        rs.append(rustType(p.unannType().getText()));
                     }
                 }
                 if (m.parametros.lastFormalParameter()!=null) {
@@ -113,10 +162,14 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
                     rs.append(", ");
                     rs.append(p.variableDeclaratorId().identifier().getText());
                     rs.append(": ");
-                    rs.append(p.unannType().getText());
+                    rs.append(rustType(p.unannType().getText()));
                 }
             }
-            rs.append(") -> ").append(m.tipo);
+            rs.append(")");
+            if (!m.tipo.equals("void")) {
+                rs.append(" -> ").append(rustType(m.tipo));
+            }
+            
             generateBlocox(m.bloco);
         }
         rs.nivelOut();
@@ -126,22 +179,34 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         if (bloco==null) {
             return false;
         }
+        
         rs.append(" {\n");
         rs.nivelIn();
-        for (ParseTree b: bloco.blockStatements().children) {
-            BlockStatementContext bc = (BlockStatementContext) b;
-            if (bc.localVariableDeclarationStatement()!=null) {
-                generateLocalVariableDeclarationStatement(bc.localVariableDeclarationStatement());
-                            }
-            if (bc.statement()!=null) {
-                Java9Parser.StatementContext st = bc.statement();
-                generateStatement(st);
+//        try {
+            if (bloco.blockStatements()!=null) {
+                for (ParseTree b: bloco.blockStatements().children) {
+                    BlockStatementContext bc = (BlockStatementContext) b;
+                    if (bc.localVariableDeclarationStatement()!=null) {
+                        generateLocalVariableDeclarationStatement(bc.localVariableDeclarationStatement());
+                                    }
+                    if (bc.statement()!=null) {
+                        Java9Parser.StatementContext st = bc.statement();
+                        generateStatement(st);
+                    }
+                }
+            } else {
+                rs.append("/* BLOCO VAZIO */\n");
             }
-        }
+//        }
+//        catch (NullPointerException e) {
+//            rs.append("//==ERRO NullPointerException " + bloco.getText());
+//            System.out.println(bloco.getText());
+//            System.out.println(e);
+//        }
         rs.nivelOut();
         //identa();
         rs.append("}\n");
-        
+
         return true;
     }
 
@@ -155,7 +220,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         List<Java9Parser.VariableDeclaratorContext> lista = st.localVariableDeclaration().variableDeclaratorList().variableDeclarator();
         for (Java9Parser.VariableDeclaratorContext v: lista) {
             //identa();
-            rs.append("let ").append(v.variableDeclaratorId().getText()).append(": ").append(tipo);
+            rs.append("let ").append(v.variableDeclaratorId().getText()).append(": ").append(rustType(tipo));
             if (v.variableInitializer()!=null) {
                 rs.append(" = ");
                 generateExpression(v.variableInitializer().expression());
@@ -164,7 +229,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         }
         
         
-        //rs.append("//LocalVariableDeclarationStatementContext ").append(st.getText()).append("\n");
+        //rs.append("//==LocalVariableDeclarationStatementContext ").append(st.getText()).append("\n");
         return true;
     }    
     
@@ -181,17 +246,53 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         else if (generateStatementWithoutTrailingSubstatement(st.statementWithoutTrailingSubstatement())) {}
         else if (generateWhileStatement(st.whileStatement())) {}
         else
-            rs.append("//StatementContext ").append(st.getText()).append("\n");
+            rs.append("//==StatementContext ").append(st.getText()).append("\n");
         
         return true;
     }    
     
     
-    private boolean generateForStatement(Java9Parser.ForStatementContext forStatement) {
-        if (forStatement==null) {
+    private boolean generateForStatement(Java9Parser.ForStatementContext st) {
+        if (st==null) {
             return false;
         }
-        rs.append("//forStatement ").append(forStatement.getText()).append("\n");
+        
+        if (st.basicForStatement()!=null) {
+            //basicForStatement
+            //	:	'for' '(' forInit? ';' expression? ';' forUpdate? ')' statement
+            //	;
+            
+            Java9Parser.BasicForStatementContext bf = st.basicForStatement();
+            rs.append("/* ").append(bf.getText()).append(" */\n");
+            rs.append("for ");
+            if (bf.forInit()!=null) rs.append(bf.forInit().getText());
+            rs.append(";");
+            if (bf.expression()!=null) rs.append(bf.expression().getText());
+            rs.append(";");
+            if (bf.forUpdate()!=null) rs.append(bf.forUpdate().getText());
+            generateStatement(bf.statement());
+            
+            return true;
+        }
+        if (st.enhancedForStatement()!=null) {
+            //enhancedForStatement
+            //	:	'for' '(' variableModifier* unannType variableDeclaratorId ':' expression ')' statement
+            //	;
+            Java9Parser.EnhancedForStatementContext ef = st.enhancedForStatement();
+            rs.append("/* ").append(ef.getText()).append(" */\n");
+            rs.append("for ");
+            rs.append(ef.variableDeclaratorId().identifier().getText());
+            rs.append(" in ");
+            generateExpression(ef.expression());
+
+            generateStatement(ef.statement());
+            
+            System.out.println(rs.toString());            
+            
+            return true;
+        }
+        
+        rs.append("//==forStatement ").append(st.getText()).append("\n");
         
         return true;
     }
@@ -228,7 +329,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         if (labeledStatement==null) {
             return false;
         }
-        rs.append("//labeledStatement ").append(labeledStatement.statement().getText()).append("\n");
+        rs.append("//==labeledStatement ").append(labeledStatement.statement().getText()).append("\n");
         
         return true;
     }
@@ -251,7 +352,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         else if (generateThrowStatement( st.throwStatement())) {}
         else if (generateTryStatement( st.tryStatement())) {}
         else 
-        rs.append("//statementWithoutTrailingSubstatement ").append(st.getText()).append("\n");
+        rs.append("//==statementWithoutTrailingSubstatement ").append(st.getText()).append("\n");
         
         return true;
     }
@@ -274,7 +375,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         if (st==null) {
             return false;
         }
-        rs.append("//AssertStatementContext ").append(st.getText()).append("\n");
+        rs.append("//==AssertStatementContext ").append(st.getText()).append("\n");
         
         return true;
     }
@@ -292,7 +393,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         if (st==null) {
             return false;
         }
-        rs.append("//ContinueStatementContext ").append(st.getText()).append("\n");
+        rs.append("continue;\n");
         
         return true;
     }
@@ -301,7 +402,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         if (st==null) {
             return false;
         }
-        rs.append("//DoStatementContext ").append(st.getText()).append("\n");
+        rs.append("//==DoStatementContext ").append(st.getText()).append("\n");
         
         return true;
     }
@@ -310,7 +411,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         if (st==null) {
             return false;
         }
-        rs.append("//EmptyStatementContext ").append(st.getText()).append("\n");
+        rs.append("//==EmptyStatementContext ").append(st.getText()).append("\n");
         
         return true;
     }
@@ -339,7 +440,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         else if (generateMethodInvocation(se.methodInvocation())) {}
         else if (generateClassInstanceCreationExpression(se.classInstanceCreationExpression())) {}
         else
-        rs.append("//ExpressionStatementContext ").append(st.getText()).append("\n");
+        rs.append("//==ExpressionStatementContext ").append(st.getText()).append("\n");
         
         return true;
     }
@@ -349,7 +450,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return false;
         }
         
-        rs.append(st.leftHandSide().getText());
+        generateSelfField(st.leftHandSide().getText());
         rs.append(" ").append(st.assignmentOperator().getText()).append(" ");
         generateExpression(st.expression());
         rs.append(";\n");
@@ -362,7 +463,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return false;
         }
         
-        rs.append("//PostDecrementExpressionContext ").append(st.getText()).append("\n");
+        rs.append("//==PostDecrementExpressionContext ").append(st.getText()).append("\n");
         
         return true;
     }
@@ -372,11 +473,35 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return false;
         }
         
-        rs.append("//PostIncrementExpressionContext ").append(st.getText()).append("\n");
+        rs.append("//==PostIncrementExpressionContext ").append(st.getText()).append("\n");
         
         return true;
     }
 
+    private boolean generateSelfMethodInvocation(String methodName) {
+        for (MethodDecl p: this.metodos) {
+            if (p.nome.equals(methodName)) {
+                rs.append("self.");
+                rs.append(methodName);
+                return true;
+            }
+        }
+        rs.append(methodName);
+        return false;
+    }
+    
+    private boolean generateSelfField(String fieldName) {
+        for (VarDecl p: this.fields) {
+            if (p.nome.equals(fieldName)) {
+                rs.append("self.");
+                rs.append(fieldName);
+                return true;
+            }
+        }
+        rs.append(fieldName);
+        return false;
+    }    
+    
     private boolean generateMethodInvocation(Java9Parser.MethodInvocationContext st) {
         if (st==null) {
             return false;
@@ -384,67 +509,72 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         
         //methodName '(' argumentList? ')'
         if (st.methodName()!=null) {
+            generateSelfMethodInvocation(st.methodName().getText());
             rs.append(st.methodName().getText());
             rs.append("(");
             generateArgumentList(st.argumentList());
-            rs.append(")");
+            rs.append(");\n");
             
             return true;
         }
 	
         //typeName '.' typeArguments? identifier '(' argumentList? ')'
         if (st.typeName()!=null&&st.SUPER()==null) {
+            generateSelfMethodInvocation(st.typeName().getText());
             rs.append(st.typeName().getText());
             rs.append(".");
             if (st.typeArguments()!=null) {
-                rs.append("//MethodInvocationContext - PANIC ").append(st.typeArguments().getText()).append("\n");
+                rs.append("//==MethodInvocationContext - PANIC ").append(st.typeArguments().getText()).append("\n");
             }
             rs.append(st.identifier().getText());
             rs.append("(");
             generateArgumentList(st.argumentList());
-            rs.append(")");                    
+            rs.append(");\n");                    
             return true; 
         }
         
         //typeName '.' 'super' '.' typeArguments? identifier '(' argumentList? ')'
         if (st.typeName()!=null&&st.SUPER()!=null) {
+            generateSelfMethodInvocation(st.typeName().getText());
             rs.append(st.typeName().getText());
             rs.append(".super.");
             if (st.typeArguments()!=null) {
-                rs.append("//MethodInvocationContext - PANIC ").append(st.typeArguments().getText()).append("\n");
+                rs.append("//==MethodInvocationContext - PANIC ").append(st.typeArguments().getText()).append("\n");
             }
             rs.append(st.identifier().getText());
             rs.append("(");
             generateArgumentList(st.argumentList());
-            rs.append(")");                    
+            rs.append(");\n");                    
             return true; 
         }
         
         //expressionName '.' typeArguments? identifier '(' argumentList? ')'
         if (st.expressionName()!=null) {
+            generateSelfMethodInvocation(st.expressionName().getText());
             rs.append(st.expressionName().getText());
             rs.append(".");
             if (st.typeArguments()!=null) {
-                rs.append("//MethodInvocationContext - PANIC ").append(st.typeArguments().getText()).append("\n");
+                rs.append("//==MethodInvocationContext - PANIC ").append(st.typeArguments().getText()).append("\n");
             }
             rs.append(st.identifier().getText());
             rs.append("(");
             generateArgumentList(st.argumentList());
-            rs.append(")");                    
+            rs.append(");\n");                    
             return true; 
         }        
         
         //primary '.' typeArguments? identifier '(' argumentList? ')'
         if (st.primary()!=null) {
+            generateSelfMethodInvocation(st.primary().getText());
             rs.append(st.primary().getText());
             rs.append(".");
             if (st.typeArguments()!=null) {
-                rs.append("//MethodInvocationContext - PANIC ").append(st.typeArguments().getText()).append("\n");
+                rs.append("//==MethodInvocationContext - PANIC ").append(st.typeArguments().getText()).append("\n");
             }
             rs.append(st.identifier().getText());
             rs.append("(");
             generateArgumentList(st.argumentList());
-            rs.append(")");                    
+            rs.append(");\n");                    
             return true; 
         }         
         
@@ -452,17 +582,17 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         if (st.SUPER()!=null) {
             rs.append("super.");
             if (st.typeArguments()!=null) {
-                rs.append("//MethodInvocationContext - PANIC ").append(st.typeArguments().getText()).append("\n");
+                rs.append("//==MethodInvocationContext - PANIC ").append(st.typeArguments().getText()).append("\n");
             }
             rs.append(st.identifier().getText());
             rs.append("(");
             generateArgumentList(st.argumentList());
-            rs.append(")");                    
+            rs.append(");\n");                    
             return true; 
         }        
         
         
-        rs.append("//MethodInvocationContext ").append(st.getText()).append("\n");
+        rs.append("//==MethodInvocationContext ").append(st.getText()).append("\n");
         
         return true;
     }
@@ -472,7 +602,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return false;
         }
         
-        rs.append("//ClassInstanceCreationExpressionContext ").append(st.getText()).append("\n");
+        rs.append("//==ClassInstanceCreationExpressionContext ").append(st.getText()).append("\n");
         
         return true;
     }
@@ -546,7 +676,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return true;
         }        
         
-        rs.append("//SwitchLabelContext ").append(st.getText()).append("\n");
+        rs.append("//==SwitchLabelContext ").append(st.getText()).append("\n");
         
         return true;
     }  
@@ -573,7 +703,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         if (generateLocalVariableDeclarationStatement(st.localVariableDeclarationStatement())) {}
         else if (generateStatement(st.statement()));
         else
-        rs.append("//BlockStatementContext ").append(st.getText()).append("\n");
+        rs.append("//==BlockStatementContext ").append(st.getText()).append("\n");
 
         return true;
     }
@@ -583,7 +713,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         if (st==null) {
             return false;
         }
-        rs.append("//SynchronizedStatementContext ").append(st.getText()).append("\n");
+        rs.append("//==SynchronizedStatementContext ").append(st.getText()).append("\n");
         
         return true;
     }
@@ -592,7 +722,11 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         if (st==null) {
             return false;
         }
-        rs.append("//ThrowStatementContext ").append(st.getText()).append("\n");
+        rs.append("panic!(");
+        generateExpression(st.expression());
+        rs.append(");\n");
+
+        System.out.println(rs.toString());
         
         return true;
     }
@@ -652,11 +786,15 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return false;
         }
         
+        //expression
+        //	:	lambdaExpression
+        //	|	assignmentExpression
+        //	;        
         
         if (generateAssignmentExpression (st.assignmentExpression())) {}
         else if (generateLambdaExpression (st.lambdaExpression())) {}
         else
-            rs.append("//ExpressionContext ").append(st.getText()).append("\n");
+            rs.append("//==ExpressionContext ").append(st.getText()).append("\n");
         
         return true;
     }    
@@ -666,10 +804,15 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return false;
         }
         
+        //assignmentExpression
+        //	:	conditionalExpression
+        //	|	assignment
+        //	;        
+        
         if (generateAssignment(st.assignment())) {} 
         else if (generateConditionalExpression(st.conditionalExpression())) {}
         else 
-            rs.append("//AssignmentExpressionContext ").append(st.getText()).append("\n");
+            rs.append("//==AssignmentExpressionContext ").append(st.getText()).append("\n");
             
         return true;
     }
@@ -678,7 +821,23 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         if (st==null) {
             return false;
         }
-        rs.append("//LambdaExpressionContext ").append(st.getText()).append("\n");
+        
+        rs.append("|");
+        if (st.lambdaParameters().formalParameterList()!=null) {
+            rs.append(st.lambdaParameters().formalParameterList().getText());
+            rs.append(", ");
+        }
+        if (st.lambdaParameters().inferredFormalParameterList()!=null) {
+            rs.append(st.lambdaParameters().inferredFormalParameterList().getText());
+        }
+        if (st.lambdaParameters().identifier()!=null) {
+            rs.append(st.lambdaParameters().identifier().getText());
+        }
+        
+        rs.append("|");
+        generateExpression(st.lambdaBody().expression());
+        generateBlockStatements(st.lambdaBody().block().blockStatements());
+        rs.append(";");
         
         return true;
     }    
@@ -688,12 +847,27 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return false;
         }
         
-        if (generateConditionalExpression(st.conditionalExpression())) {}
-        else if (generateConditionalOrExpression(st.conditionalOrExpression())) {}
-        else if (generateExpression(st.expression())) {} 
-        else if (generateLambdaExpression(st.lambdaExpression())) {} 
-        else
-            rs.append("//ConditionalExpressionContext ").append(st.getText()).append("\n");
+        //conditionalExpression
+        //	:	conditionalOrExpression
+        //	|	conditionalOrExpression '?' expression ':' (conditionalExpression|lambdaExpression)
+        //	;        
+
+        //condicao ternaria
+        if (st.QUESTION()!=null) {
+            rs.append("/* ?: */ if ");
+            generateConditionalOrExpression(st.conditionalOrExpression());
+            rs.append(" then ");
+            generateExpression(st.expression());
+            rs.append(" else ");
+            generateConditionalExpression(st.conditionalExpression());
+            generateLambdaExpression(st.lambdaExpression());
+            rs.append(";");
+            return true;
+        }
+
+        if (generateConditionalOrExpression(st.conditionalOrExpression())) {
+            return true;
+        }
         
         return true;
     }
@@ -703,10 +877,23 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return false;
         }
         
-        if (generateConditionalAndExpression(st.conditionalAndExpression())) {}
-        else if (generateConditionalOrExpression(st.conditionalOrExpression())) {}
-        else         
-            rs.append("//ConditionalOrExpressionContext ").append(st.getText()).append("\n");
+        //conditionalOrExpression
+        //	:	conditionalAndExpression
+        //	|	conditionalOrExpression '||' conditionalAndExpression
+        //	;        
+        
+        if (st.OR()!=null) {
+            generateConditionalOrExpression(st.conditionalOrExpression());
+            rs.append(" || ");
+            generateConditionalAndExpression(st.conditionalAndExpression());
+            return true;
+        }
+        
+        if (generateConditionalAndExpression(st.conditionalAndExpression())) {
+            return true;
+        }
+
+        rs.append("//==ConditionalOrExpressionContext ").append(st.getText()).append("\n");
         
         return true;
     }
@@ -716,10 +903,23 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return false;
         }
         
-        if (generateConditionalAndExpression(st.conditionalAndExpression())) {}
-        else if (generateInclusiveOrExpression(st.inclusiveOrExpression())) {}
-        else 
-            rs.append("//ConditionalAndExpressionContext ").append(st.getText()).append("\n");
+        //conditionalAndExpression
+        //	:	inclusiveOrExpression
+        //	|	conditionalAndExpression '&&' inclusiveOrExpression
+        //	;        
+        
+        if (st.AND()!=null) {
+            generateConditionalAndExpression(st.conditionalAndExpression());
+            rs.append(" && ");
+            generateInclusiveOrExpression(st.inclusiveOrExpression());
+            return true;
+        }
+        
+        if (generateInclusiveOrExpression(st.inclusiveOrExpression())) {
+            return true;
+        }
+
+        rs.append("//==ConditionalAndExpressionContext ").append(st.getText()).append("\n");
         
         return true;
     }
@@ -729,10 +929,23 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return false;
         }
         
-        if (generateExclusiveOrExpression(st.exclusiveOrExpression())) {}
-        else if (generateInclusiveOrExpression(st.inclusiveOrExpression())) {}
-        else
-            rs.append("//InclusiveOrExpressionContext ").append(st.getText()).append("\n");
+        //inclusiveOrExpression
+        //	:	exclusiveOrExpression
+        //	|	inclusiveOrExpression '|' exclusiveOrExpression
+        //	;        
+        
+        if (st.BITOR()!=null) {
+            generateInclusiveOrExpression(st.inclusiveOrExpression());
+            rs.append(" | ");
+            generateExclusiveOrExpression(st.exclusiveOrExpression());
+            return true;
+        }
+        
+        if (generateExclusiveOrExpression(st.exclusiveOrExpression())) {
+            return true;
+        }
+        
+        rs.append("//==InclusiveOrExpressionContext ").append(st.getText()).append("\n");
         
         return true;
     }
@@ -742,10 +955,23 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return false;
         }
         
-        if (generateAndExpression(st.andExpression())) {}
-        else if (generateExclusiveOrExpression(st.exclusiveOrExpression())) {}
-        else 
-            rs.append("//ExclusiveOrExpressionContext ").append(st.getText()).append("\n");
+        //exclusiveOrExpression
+        //	:	andExpression
+        //	|	exclusiveOrExpression '^' andExpression
+        //	;        
+        
+        if (st.CARET()!=null) {
+            generateExclusiveOrExpression(st.exclusiveOrExpression());
+            rs.append(" ^ ");
+            generateAndExpression(st.andExpression());
+            return true;
+        }
+        
+        if (generateAndExpression(st.andExpression())) {
+            return true;
+        }
+        
+        rs.append("//==ExclusiveOrExpressionContext ").append(st.getText()).append("\n");
         
         return true;
     }    
@@ -755,10 +981,23 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return false;
         }
         
-        if (generateAndExpression(st.andExpression())) {}
-        else if (generateEqualityExpression(st.equalityExpression())) {}
-        else
-        rs.append("//AndExpressionContext ").append(st.getText()).append("\n");
+        //andExpression
+        //	:	equalityExpression
+        //	|	andExpression '&' equalityExpression
+        //	;        
+        
+        if (st.BITAND()!=null) {
+            generateAndExpression(st.andExpression());
+            rs.append(" & ");
+            generateEqualityExpression(st.equalityExpression());
+            return true;
+        }
+        
+        if (generateEqualityExpression(st.equalityExpression())) {
+            return true;
+        }
+        
+        rs.append("//==AndExpressionContext ").append(st.getText()).append("\n");
         
         return true;
     }
@@ -767,6 +1006,12 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         if (st==null) {
             return false;
         }
+        
+        //equalityExpression
+        //        :	relationalExpression
+        //        |	equalityExpression '==' relationalExpression
+        //        |	equalityExpression '!=' relationalExpression
+        //        ;        
         
         if (st.EQUAL()!=null) {
             generateEqualityExpression(st.equalityExpression());
@@ -782,10 +1027,11 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return true;
         }
         
-        if (generateEqualityExpression(st.equalityExpression())) {}
-        else if (generateRelationalExpression(st.relationalExpression())) {}
-        else        
-        rs.append("//EqualityExpressionContext ").append(st.getText()).append("\n");
+        if (generateRelationalExpression(st.relationalExpression())) {
+            return true;
+        }
+
+        rs.append("//==EqualityExpressionContext ").append(st.getText()).append("\n");
         
         return true;
     }
@@ -795,10 +1041,20 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return false;
         }
         
+        //relationalExpression
+        //	:	shiftExpression
+        //	|	relationalExpression '<' shiftExpression
+        //	|	relationalExpression '>' shiftExpression
+        //	|	relationalExpression '<=' shiftExpression
+        //	|	relationalExpression '>=' shiftExpression
+        //	|	relationalExpression 'instanceof' referenceType
+        //	;        
+        
+        
         if (st.INSTANCEOF()!=null) {
             generateRelationalExpression(st.relationalExpression());
             rs.append(" instanceof ");
-            generateShiftExpression(st.shiftExpression());
+            generateReferenceType(st.referenceType());
             return true;            
         }
         
@@ -830,11 +1086,11 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return true;
         }        
         
-        if (generateReferenceType(st.referenceType())) {}
-        else if (generateRelationalExpression(st.relationalExpression())) {}
-        else if (generateShiftExpression(st.shiftExpression())) {}
-        else
-        rs.append("//RelationalExpressionContext ").append(st.getText()).append("\n");
+        if (generateShiftExpression(st.shiftExpression())) {
+            return true;
+        }
+
+        rs.append("//==RelationalExpressionContext ").append(st.getText()).append("\n");
         
         return true;
     }    
@@ -844,7 +1100,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return false;
         }
         
-        rs.append("//ReferenceTypeContext ").append(st.getText()).append("\n");
+        rs.append("//==ReferenceTypeContext ").append(st.getText()).append("\n");
         
         return true;
     }
@@ -854,10 +1110,25 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return false;
         }
         
-        if (generateAdditiveExpression(st.additiveExpression())) {}
-        else if (generateShiftExpression(st.shiftExpression())) {}
-        else 
-        rs.append("//ShiftExpressionContext ").append(st.getText()).append("\n");
+        //shiftExpression
+        //	:	additiveExpression
+        //	|	shiftExpression '<' '<' additiveExpression
+        //	|	shiftExpression '>' '>' additiveExpression
+        //	|	shiftExpression '>' '>' '>' additiveExpression
+        //	;        
+        
+        if (st.shiftExpression()!=null) {
+            generateShiftExpression(st.shiftExpression());
+            rs.append (" SHIFT !!! ");
+            generateAdditiveExpression(st.additiveExpression());
+            return true;
+        }
+        
+        if (generateAdditiveExpression(st.additiveExpression())) {
+            return true;
+        }
+
+        rs.append("//==ShiftExpressionContext ").append(st.getText()).append("\n");
         
         return true;
     }
@@ -867,10 +1138,25 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return false;
         }
         
-        if (generateAdditiveExpression(st.additiveExpression())) {}
-        else if (generateMultiplicativeExpression(st.multiplicativeExpression())) {}
-        else
-        rs.append("//AdditiveExpressionContext ").append(st.getText()).append("\n");
+        //additiveExpression
+        //	:	multiplicativeExpression
+        //	|	additiveExpression '+' multiplicativeExpression
+        //	|	additiveExpression '-' multiplicativeExpression
+        //	;        
+        
+        if (st.additiveExpression()!=null) {
+            generateAdditiveExpression(st.additiveExpression());
+            if (st.ADD()!=null) {rs.append("+");}
+            if (st.SUB()!=null) {rs.append("-");}
+            generateMultiplicativeExpression(st.multiplicativeExpression());
+            return true;
+        }
+        
+        if (generateMultiplicativeExpression(st.multiplicativeExpression())) {
+            return true;
+        }
+        
+        rs.append("//==AdditiveExpressionContext ").append(st.getText()).append("\n");
         
         return true;
     }
@@ -880,10 +1166,27 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return false;
         }
         
-        if (generateMultiplicativeExpression(st.multiplicativeExpression())) {}
-        else if (generateUnaryExpression(st.unaryExpression())) {}
-        else
-        rs.append("//MultiplicativeExpressionContext ").append(st.getText()).append("\n");
+        //multiplicativeExpression
+        //	:	unaryExpression
+        //	|	multiplicativeExpression '*' unaryExpression
+        //	|	multiplicativeExpression '/' unaryExpression
+        //	|	multiplicativeExpression '%' unaryExpression
+        //	;        
+        
+        if (st.multiplicativeExpression()!=null) {
+            generateMultiplicativeExpression(st.multiplicativeExpression());
+            if (st.DIV()!=null) { rs.append(" / "); }
+            if (st.MUL()!=null) { rs.append(" * "); }
+            if (st.MOD()!=null) { rs.append(" % "); }
+            generateUnaryExpression(st.unaryExpression());
+            return true;
+        }
+        
+        if (generateUnaryExpression(st.unaryExpression())) {
+            return true;
+        }
+        
+        rs.append("//==MultiplicativeExpressionContext ").append(st.getText()).append("\n");
         
         return true;
     }
@@ -893,12 +1196,26 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return false;
         }
         
+        //unaryExpression
+        //	:	preIncrementExpression
+        //	|	preDecrementExpression
+        //	|	'+' unaryExpression
+        //	|	'-' unaryExpression
+        //	|	unaryExpressionNotPlusMinus
+        //	;        
+
+        if (st.unaryExpression()!=null) {
+            if (st.ADD()!=null) { rs.append(" + "); }
+            if (st.SUB()!=null) { rs.append(" - "); }
+            generateUnaryExpression(st.unaryExpression());
+            return true;
+        }
+        
         if (generatePreDecrementExpression(st.preDecrementExpression())) {}
         else if (generatePreIncrementExpression(st.preIncrementExpression())) {}
-        else if (generateUnaryExpression(st.unaryExpression())) {}
         else if (generateUnaryExpressionNotPlusMinus(st.unaryExpressionNotPlusMinus())) {}
         else 
-        rs.append("//UnaryExpressionContext ").append(st.getText()).append("\n");
+        rs.append("//==UnaryExpressionContext ").append(st.getText()).append("\n");
         
         return true;
     }
@@ -908,7 +1225,8 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return false;
         }
         
-        rs.append("//PreDecrementExpressionContext ").append(st.getText()).append("\n");
+        rs.append(" --");
+        generateUnaryExpression(st.unaryExpression());
         
         return true;
     }
@@ -918,7 +1236,8 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return false;
         }
         
-        rs.append("//PreIncrementExpressionContext ").append(st.getText()).append("\n");
+        rs.append(" ++");
+        generateUnaryExpression(st.unaryExpression());
         
         return true;
     }
@@ -928,11 +1247,24 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return false;
         }
         
+        //unaryExpressionNotPlusMinus
+        //        :	postfixExpression
+        //        |	'~' unaryExpression
+        //        |	'!' unaryExpression
+        //        |	castExpression
+        //        ;
+        
+        if (st.unaryExpression()!=null) {
+            if (st.BANG()!=null) { rs.append("!"); }
+            if (st.TILDE()!=null) { rs.append("~"); }
+            generateUnaryExpression(st.unaryExpression());
+            return true;
+        }
+        
         if (generateCastExpression(st.castExpression())) {}
         else if (generatePostfixExpression(st.postfixExpression())) {}
-        else if (generateUnaryExpression(st.unaryExpression())) {}
         else
-        rs.append("//UnaryExpressionNotPlusMinusContext ").append(st.getText()).append("\n");
+        rs.append("//==UnaryExpressionNotPlusMinusContext ").append(st.getText()).append("\n");
         
         return true;
     }
@@ -942,11 +1274,20 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return false;
         }
         
+        //castExpression
+        //	:	'(' primitiveType ')' unaryExpression
+        //	|	'(' referenceType additionalBound* ')' unaryExpressionNotPlusMinus
+        //	|	'(' referenceType additionalBound* ')' lambdaExpression
+        //	;        
+        
+        
+        //NAO FARA O TRATAMENTO DE CAST, POIS NO RUST O SENTIDO DISTO É OUTRO
+        //APENAS FARA O TRATAMENTO DAS EXPRESSOES
         if (generateUnaryExpression(st.unaryExpression())) {}
         else if (generateUnaryExpressionNotPlusMinus(st.unaryExpressionNotPlusMinus())) {}
         else if (generateLambdaExpression(st.lambdaExpression())) {}
         else 
-        rs.append("//CastExpressionContext ").append(st.getText()).append("\n");
+        rs.append("//==CastExpressionContext ").append(st.getText()).append("\n");
         
         return true;
     }
@@ -956,27 +1297,345 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return false;
         }
 
-        if (st.primary()!=null) {
-            rs.append(st.primary().getText());
-        }        
-            
-            
-        if (st.expressionName()!=null) {
-            rs.append(st.expressionName().identifier().getText());
-        }
-
-        for (Java9Parser.PostDecrementExpression_lf_postfixExpressionContext e: st.postDecrementExpression_lf_postfixExpression()) {
-            rs.append("//generatePostfixExpression->panic1 !" + e.getText());
-        }
+        //postfixExpression
+        //	:	(	primary
+        //		|	expressionName
+        //		)
+        //		(	postIncrementExpression_lf_postfixExpression
+        //		|	postDecrementExpression_lf_postfixExpression
+        //		)*
+        //	;        
+        
+        
+        generatePrimary(st.primary());
+        generateExpressionName(st.expressionName());
 
         for (Java9Parser.PostIncrementExpression_lf_postfixExpressionContext e: st.postIncrementExpression_lf_postfixExpression()) {
-            rs.append("//generatePostfixExpression->panic2 !" + e.getText());
+            generatePostIncrementExpression_lf_postfixExpression(e);
+        }        
+        for (Java9Parser.PostDecrementExpression_lf_postfixExpressionContext e: st.postDecrementExpression_lf_postfixExpression()) {
+            generatepostDecrementExpression_lf_postfixExpression(e);
         }
-        
         
         return true;
     }    
 
+    private boolean generatePrimary(Java9Parser.PrimaryContext st) {
+        if (st==null) {
+            return false;
+        }
+        //primary
+        //        :	(	primaryNoNewArray_lfno_primary
+        //                |	arrayCreationExpression
+        //                )
+        //                (	primaryNoNewArray_lf_primary
+        //                )*
+        //        ;
+        
+        if (generatePrimaryNoNewArray_lfno_primary(st.primaryNoNewArray_lfno_primary())) {
+            return true;
+        }
+        
+        //arrayCreationExpression
+        //	:	'new' primitiveType dimExprs dims?
+        //	|	'new' classOrInterfaceType dimExprs dims?
+        //	|	'new' primitiveType dims arrayInitializer
+        //	|	'new' classOrInterfaceType dims arrayInitializer
+        //	;
+        Java9Parser.ArrayCreationExpressionContext a = st.arrayCreationExpression();
+        if (a.primitiveType()!=null) { 
+            rs.append(rustType(a.primitiveType().getText()));
+        }
+        if (a.classOrInterfaceType()!=null) { 
+            rs.append("new_");
+            rs.append(a.classOrInterfaceType().getText());
+        }
+        if (a.dimExprs()!=null) {
+            rs.append("[");
+            long count = 0;
+            for (Java9Parser.DimExprContext de: a.dimExprs().dimExpr()) {
+                count++;
+                if (count>1) { rs.append(", ");}
+                generateExpression(de.expression());
+            }
+            rs.append("]");
+        }
+        if (a.dims()!=null) {
+            rs.append("[]");
+        }
+        if (a.arrayInitializer()!=null) {
+            rs.append(a.arrayInitializer().getText()).append( "/* array initializer */");
+        }
+            
+        return true;
+    }
+
+    private boolean generatePrimaryNoNewArray_lfno_primary(Java9Parser.PrimaryNoNewArray_lfno_primaryContext st) {
+        if (st==null) {
+            return false;
+        }
+        
+        //primaryNoNewArray
+        //	:	literal
+        //	|	classLiteral
+        //	|	'this'
+        //	|	typeName '.' 'this'
+        //	|	'(' expression ')'
+        //	|	classInstanceCreationExpression
+        //	|	fieldAccess
+        //	|	arrayAccess
+        //	|	methodInvocation
+        //	|	methodReference
+        //	;        
+        
+        if (generateLiteral(st.literal())) { return true; }
+        if (generateTypeName(st.typeName())) { return true; }
+        if (generateClassInstanceCreationExpression_lfno_primary(st.classInstanceCreationExpression_lfno_primary())) { return true; }
+        if (generateFieldAccess_lfno_primary(st.fieldAccess_lfno_primary())) { return true; }
+        if (generateArrayAccess_lfno_primary(st.arrayAccess_lfno_primary())) { return true; }
+        if (generateMethodInvocation_lfno_primary(st.methodInvocation_lfno_primary())) { return true; }
+        if (generateMethodReference_lfno_primary(st.methodReference_lfno_primary())) { return true; }
+        if (st.LPAREN()!=null) {
+            rs.append("(");
+            generateExpression(st.expression());
+            rs.append(")");
+            return true;
+        }
+        if (st.typeName()==null&&st.THIS()!=null) {
+            rs.append("self");
+            System.out.println(rs.toString());
+            System.out.println(st.getText());
+            return true;
+        }
+        if (st.typeName()==null&&st.THIS()!=null) {
+            generateTypeName(st.typeName());
+            rs.append(".self");
+            System.out.println(rs.toString());
+            System.out.println(st.getText());
+            return true;
+        }        
+        
+        rs.append("//==generatePrimaryNoNewArray_lfno_primary ").append(st.getText()).append("\n");
+        System.out.println(rs.toString());
+        System.out.println(st.getText());
+        
+        return true;
+    }    
+    
+    private boolean generateLiteral(Java9Parser.LiteralContext st) {
+        if (st==null) {
+            return false;
+        }
+
+        //literal
+        //	:	IntegerLiteral
+        //	|	FloatingPointLiteral
+        //	|	BooleanLiteral
+        //	|	CharacterLiteral
+        //	|	StringLiteral
+        //	|	NullLiteral
+        //	;        
+        
+        if (st.StringLiteral()!=null) {
+            rs.append(st.StringLiteral().getText());
+            rs.append(".to_string()");
+            return true;
+        }
+        
+        rs.append(st.getText());
+        return true;
+    }
+
+    private boolean generateTypeName(Java9Parser.TypeNameContext st) {
+        if (st==null) {
+            return false;
+        }
+        rs.append(st.getText());
+        return true;
+    }
+
+    private boolean generateClassInstanceCreationExpression_lfno_primary(Java9Parser.ClassInstanceCreationExpression_lfno_primaryContext st) {
+        if (st==null) {
+            return false;
+        }
+        //classInstanceCreationExpression_lfno_primary
+        //	:	'new' typeArguments? annotation* identifier ('.' annotation* identifier)* typeArgumentsOrDiamond? '(' argumentList? ')' classBody?
+        //	|	expressionName '.' 'new' typeArguments? annotation* identifier typeArgumentsOrDiamond? '(' argumentList? ')' classBody?
+        //	;        
+        
+        if (st.expressionName()==null) {
+            rs.append("new");
+            for (Java9Parser.IdentifierContext i: st.identifier()) {
+                rs.append("_");
+                rs.append(i.getText());
+                rs.append("(");
+                generateArgumentList(st.argumentList());
+                rs.append(")");
+            }
+            return true;
+        }
+        
+
+        System.out.println(st.getText());        
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    private boolean generateFieldAccess_lfno_primary(Java9Parser.FieldAccess_lfno_primaryContext st) {
+                if (st==null) {
+            return false;
+        }
+        System.out.println(st.getText());
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    private boolean generateArrayAccess_lfno_primary(Java9Parser.ArrayAccess_lfno_primaryContext st) {
+        if (st==null) {
+            return false;
+        }
+        
+        //arrayAccess_lfno_primary
+        //	:	(	expressionName '[' expression ']'
+        //		|	primaryNoNewArray_lfno_primary_lfno_arrayAccess_lfno_primary '[' expression ']'
+        //		)
+        //		(	primaryNoNewArray_lfno_primary_lf_arrayAccess_lfno_primary '[' expression ']'
+        //		)*
+        //	;        
+        
+        if (st.expressionName()!=null) {
+            generateExpressionName(st.expressionName());
+            rs.append("[");
+            long count=0;
+            for (Java9Parser.ExpressionContext e: st.expression()) {
+                count++;
+                if (count>1) {
+                    rs.append(", ");
+                }
+                generateExpression(e);
+            }
+            rs.append("]");
+            return true;
+        }
+        
+        System.out.println(st.getText());        
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    private boolean generateMethodInvocation_lfno_primary(Java9Parser.MethodInvocation_lfno_primaryContext st) {
+        if (st==null) {
+            return false;
+        }
+        
+        //methodInvocation_lfno_primary
+        //	:	methodName '(' argumentList? ')'
+        //	|	typeName '.' typeArguments? identifier '(' argumentList? ')'
+        //	|	expressionName '.' typeArguments? identifier '(' argumentList? ')'
+        //	|	'super' '.' typeArguments? identifier '(' argumentList? ')'
+        //	|	typeName '.' 'super' '.' typeArguments? identifier '(' argumentList? ')'
+        //	;        
+        if (st.methodName()!=null) {
+            generateSelfMethodInvocation(st.getText());  
+            rs.append("(");
+            generateArgumentList(st.argumentList());
+            rs.append(")"); 
+            return true;
+        }
+        
+        //	|	typeName '.' typeArguments? identifier '(' argumentList? ')'
+        if (st.typeName()!=null && st.SUPER()==null) {
+            rs.append(st.typeName().getText());  
+            //System.out.println(st.typeArguments().getText());
+            rs.append(".");
+            rs.append(st.identifier().getText());
+            rs.append("(");
+            generateArgumentList(st.argumentList());
+            rs.append(")");
+            return true;
+        }
+        
+        if (st.expressionName()!=null) {
+            System.out.println(st.getText());  
+            generateExpressionName(st.expressionName());
+            return true;
+        }
+        
+        if (st.SUPER()!=null&&st.typeName()==null) {
+            System.out.println(st.getText());  
+            System.out.println(st.getText());
+            return true;
+        }        
+        
+        if (st.SUPER()!=null&&st.typeName()!=null) {
+            System.out.println(st.getText());  
+            System.out.println(st.getText());
+            return true;
+        }        
+        
+        System.out.println(st.getText());        
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    private boolean generateMethodReference_lfno_primary(Java9Parser.MethodReference_lfno_primaryContext st) {
+        if (st==null) {
+            return false;
+        }
+        System.out.println(st.getText());        
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+
+    
+    private boolean generateExpressionName(Java9Parser.ExpressionNameContext st) {
+        if (st==null) {
+            return false;
+        }
+        //expressionName
+        //	:	identifier
+        //	|	ambiguousName '.' identifier
+        //	;
+
+        if (st.ambiguousName()!=null) {
+            generateAmbiguousName(st.ambiguousName());
+            rs.append(".");
+            rs.append(st.identifier().getText());
+            return true;            
+        }
+        
+        generateSelfField(st.identifier().getText());
+        
+        return true;
+    }
+
+    private boolean generateAmbiguousName(Java9Parser.AmbiguousNameContext st) {
+        if (st==null) {
+            return false;
+        }
+
+        //ambiguousName
+        //	:	identifier
+        //	|	ambiguousName '.' identifier
+        //	;        
+        
+        if (st.ambiguousName()!=null) {
+            generateAmbiguousName(st.ambiguousName());
+            rs.append(".");
+            rs.append(st.identifier().getText());
+            return true;            
+        }
+        
+        generateSelfField(st.identifier().getText());
+        
+        return true;        
+    }    
+    
+    private void generatePostIncrementExpression_lf_postfixExpression(Java9Parser.PostIncrementExpression_lf_postfixExpressionContext e) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }
+
+    private void generatepostDecrementExpression_lf_postfixExpression(Java9Parser.PostDecrementExpression_lf_postfixExpressionContext e) {
+        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+    }    
+    
+    
     private boolean generateArgumentList(Java9Parser.ArgumentListContext st) {
         if (st==null) {
             return false;
@@ -994,5 +1653,14 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         return true;
     }
 
+    private String rustType(String javaType) {
+        switch (javaType) {
+            case "long": return "i64";
+            case "int": return "i32";
+            case "boolean": return "bool";
+            case "void": return "()";
+            default: return javaType;
+        }
+    }
     
 }

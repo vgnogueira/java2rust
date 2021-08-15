@@ -26,11 +26,14 @@ class ProgramBuffer {
             identa();
             identacaoPendente=false;
         }
-        if (valor.contains("\n")) {
-            identacaoPendente=true;
+        if (valor!=null) {
+            if (valor.contains("\n")) {
+                identacaoPendente=true;
+            }
+            b.append(valor);
+        } else {
+            b.append("/* ERRO VALOR NULL */");
         }
-        b.append(valor);
-        
         
         return this;
     }
