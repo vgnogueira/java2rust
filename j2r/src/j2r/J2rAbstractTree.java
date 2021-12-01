@@ -13,9 +13,9 @@ import org.antlr.v4.runtime.tree.ParseTree;
 public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
 
     private String className = "no_name";
-    private List<MethodDecl> metodos = new ArrayList<>();
+    private final List<MethodDecl> metodos = new ArrayList<>();
     private ProgramBuffer rs;
-    private List<VarDecl> fields = new ArrayList<>();
+    private final List<VarDecl> fields = new ArrayList<>();
 
     public class Node {
         Node parentNode;
@@ -74,11 +74,48 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
     public String generate() {
             rs = new ProgramBuffer();
 
+            rs.append(
+"#![allow(non_snake_case)]\n" +
+"#![allow(dead_code)]\n" +
+"#![allow(unused_variables)]\n" +
+"#![allow(unused_imports)]\n" +
+"\n" +
+"use crate::java_compat::ModJavaString;\n" +
+"use crate::java_compat::ModJavaString::JavaString;\n" +
+"use crate::java_compat::ModSystem::System;\n" +
+"use crate::java_compat::ModResultSet::ResultSet;\n" +
+"use crate::java_compat::ModThread::Thread;\n" 
+            );
+            rs.append("\n\n\n");
+
+            rs.append("use crate::fastdialer::dao::AcaoDAO::AcaoDAO;\n" +
+"use crate::fastdialer::dao::AgendaDAO::AgendaDAO;\n" +
+"use crate::fastdialer::dao::AsrDAO::AsrDAO;\n" +
+"use crate::fastdialer::dao::BlacklistDAO::BlacklistDAO;\n" +
+"use crate::fastdialer::dao::CallRelatedDAO::CallRelatedDAO;\n" +
+"use crate::fastdialer::dao::CampanhaDAO::CampanhaDAO;\n" +
+"use crate::fastdialer::dao::ChatDAO::ChatDAO;\n" +
+"use crate::fastdialer::dao::ChatMessageDAO::ChatMessageDAO;\n" +
+"use crate::fastdialer::dao::DAOFactory::DAOFactory;\n" +
+"use crate::fastdialer::dao::DbExternoDAO::DbExternoDAO;\n" +
+"use crate::fastdialer::dao::EventoDAO::EventoDAO;\n" +
+"use crate::fastdialer::dao::FastdialerExternoDAO::FastdialerExternoDAO;\n" +
+"use crate::fastdialer::dao::ListaTelDAO::ListaTelDAO;\n" +
+"use crate::fastdialer::dao::LogDAO::LogDAO;\n" +
+"use crate::fastdialer::dao::MailingDetalheDAO::MailingDetalheDAO;\n" +
+"use crate::fastdialer::dao::MonitorPbxDAO::MonitorPbxDAO;\n" +
+"use crate::fastdialer::dao::NotificacaoDAO::NotificacaoDAO;\n" +
+"use crate::fastdialer::dao::OngoingDAO::OngoingDAO;\n" +
+"use crate::fastdialer::dao::OperadorDAO::OperadorDAO;\n" +
+"use crate::fastdialer::dao::ParametroDAO::ParametroDAO;\n" +
+"use crate::fastdialer::dao::PredCallRecordDAO::PredCallRecordDAO;\n" +
+"use crate::fastdialer::dao::RamalDAO::RamalDAO;\n" +
+"use crate::fastdialer::dao::RotaDAO::RotaDAO;\n" +
+"use crate::fastdialer::dao::TabulacaoDAO::TabulacaoDAO;\n" +
+"use crate::fastdialer::dao::TrunkDAO::TrunkDAO;\n");
+
+            rs.append("\n\n\n");
             
-            rs.append("\n\n");
-            rs.append("use crate::java_compat::{System, Thread};\n\n");
-            
-            rs.append("#[allow(non_snake_case)]\n");
             rs.append("pub struct ").append(className).append(" {\n");
             rs.nivelIn();
             
@@ -98,7 +135,6 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             rs.append("}\n\n");
 
             //CONSTRUTOR BASICO
-            rs.append("#[allow(non_snake_case)]\n");
             rs.append("pub fn new_").append(className).append("() -> ").append(className).append(" {\n");
             rs.nivelIn();
             rs.append(className).append(" {\n");
@@ -133,10 +169,13 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
 
             rs.append("}\n\n");
 
-            System.out.println(rs.toString());
+        //ALGUNS "AJUSTES"
+        String rsfinal = rs.toString().replaceAll("while true", "loop");
+            
+            System.out.println(rsfinal);
 
         
-        return rs.toString();
+        return rsfinal;
     }
 
     private void generateMethods() {
@@ -144,17 +183,15 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         for (MethodDecl m: metodos) {
             rs.append("\n");
             //identa();
-            rs.append("#[allow(non_snake_case)]\n");
-            rs.append("#[allow(dead_code)]\n");
-            rs.append("#[allow(unused_variables)]\n");
-            rs.append("fn ").append(m.nome).append("(&mut self");
+
+            rs.append("fn ").append(m.nome).append("(&self");
             if (m.parametros!=null) {
                 if (m.parametros.formalParameters()!=null) {
                     for (Java9Parser.FormalParameterContext p: m.parametros.formalParameters().formalParameter()) {
                         rs.append(", ");
                         rs.append(p.variableDeclaratorId().identifier().getText());
                         rs.append(": ");
-                        rs.append(rustType(p.unannType().getText()));
+                        rs.append(rustTypeParam(p.unannType().getText()));
                     }
                 }
                 if (m.parametros.lastFormalParameter()!=null) {
@@ -162,7 +199,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
                     rs.append(", ");
                     rs.append(p.variableDeclaratorId().identifier().getText());
                     rs.append(": ");
-                    rs.append(rustType(p.unannType().getText()));
+                    rs.append(rustTypeParam(p.unannType().getText()));
                 }
             }
             rs.append(")");
@@ -188,7 +225,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
                     BlockStatementContext bc = (BlockStatementContext) b;
                     if (bc.localVariableDeclarationStatement()!=null) {
                         generateLocalVariableDeclarationStatement(bc.localVariableDeclarationStatement());
-                                    }
+                    }
                     if (bc.statement()!=null) {
                         Java9Parser.StatementContext st = bc.statement();
                         generateStatement(st);
@@ -286,8 +323,6 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             generateExpression(ef.expression());
 
             generateStatement(ef.statement());
-            
-            System.out.println(rs.toString());            
             
             return true;
         }
@@ -510,7 +545,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         //methodName '(' argumentList? ')'
         if (st.methodName()!=null) {
             generateSelfMethodInvocation(st.methodName().getText());
-            rs.append(st.methodName().getText());
+            //rs.append(st.methodName().getText());
             rs.append("(");
             generateArgumentList(st.argumentList());
             rs.append(");\n");
@@ -521,7 +556,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         //typeName '.' typeArguments? identifier '(' argumentList? ')'
         if (st.typeName()!=null&&st.SUPER()==null) {
             generateSelfMethodInvocation(st.typeName().getText());
-            rs.append(st.typeName().getText());
+            //rs.append(st.typeName().getText());
             rs.append(".");
             if (st.typeArguments()!=null) {
                 rs.append("//==MethodInvocationContext - PANIC ").append(st.typeArguments().getText()).append("\n");
@@ -536,7 +571,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         //typeName '.' 'super' '.' typeArguments? identifier '(' argumentList? ')'
         if (st.typeName()!=null&&st.SUPER()!=null) {
             generateSelfMethodInvocation(st.typeName().getText());
-            rs.append(st.typeName().getText());
+            //rs.append(st.typeName().getText());
             rs.append(".super.");
             if (st.typeArguments()!=null) {
                 rs.append("//==MethodInvocationContext - PANIC ").append(st.typeArguments().getText()).append("\n");
@@ -551,7 +586,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         //expressionName '.' typeArguments? identifier '(' argumentList? ')'
         if (st.expressionName()!=null) {
             generateSelfMethodInvocation(st.expressionName().getText());
-            rs.append(st.expressionName().getText());
+            //rs.append(st.expressionName().getText());
             rs.append(".");
             if (st.typeArguments()!=null) {
                 rs.append("//==MethodInvocationContext - PANIC ").append(st.typeArguments().getText()).append("\n");
@@ -566,7 +601,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         //primary '.' typeArguments? identifier '(' argumentList? ')'
         if (st.primary()!=null) {
             generateSelfMethodInvocation(st.primary().getText());
-            rs.append(st.primary().getText());
+            //rs.append(st.primary().getText());
             rs.append(".");
             if (st.typeArguments()!=null) {
                 rs.append("//==MethodInvocationContext - PANIC ").append(st.typeArguments().getText()).append("\n");
@@ -726,8 +761,6 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         generateExpression(st.expression());
         rs.append(");\n");
 
-        System.out.println(rs.toString());
-        
         return true;
     }
 
@@ -835,8 +868,13 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         }
         
         rs.append("|");
-        generateExpression(st.lambdaBody().expression());
-        generateBlockStatements(st.lambdaBody().block().blockStatements());
+        if (st.lambdaBody().expression()!=null) {
+            generateExpression(st.lambdaBody().expression());
+        }
+        
+        if (st.lambdaBody().block()!=null) {
+            generateBlockStatements(st.lambdaBody().block().blockStatements());
+        }
         rs.append(";");
         
         return true;
@@ -1403,21 +1441,15 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         }
         if (st.typeName()==null&&st.THIS()!=null) {
             rs.append("self");
-            System.out.println(rs.toString());
-            System.out.println(st.getText());
             return true;
         }
         if (st.typeName()==null&&st.THIS()!=null) {
             generateTypeName(st.typeName());
             rs.append(".self");
-            System.out.println(rs.toString());
-            System.out.println(st.getText());
             return true;
         }        
         
         rs.append("//==generatePrimaryNoNewArray_lfno_primary ").append(st.getText()).append("\n");
-        System.out.println(rs.toString());
-        System.out.println(st.getText());
         
         return true;
     }    
@@ -1475,16 +1507,14 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return true;
         }
         
-
-        System.out.println(st.getText());        
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
     private boolean generateFieldAccess_lfno_primary(Java9Parser.FieldAccess_lfno_primaryContext st) {
-                if (st==null) {
+        if (st==null) {
             return false;
         }
-        System.out.println(st.getText());
+
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
@@ -1516,7 +1546,6 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             return true;
         }
         
-        System.out.println(st.getText());        
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
@@ -1543,7 +1572,6 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         //	|	typeName '.' typeArguments? identifier '(' argumentList? ')'
         if (st.typeName()!=null && st.SUPER()==null) {
             rs.append(st.typeName().getText());  
-            //System.out.println(st.typeArguments().getText());
             rs.append(".");
             rs.append(st.identifier().getText());
             rs.append("(");
@@ -1553,24 +1581,18 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         }
         
         if (st.expressionName()!=null) {
-            System.out.println(st.getText());  
             generateExpressionName(st.expressionName());
             return true;
         }
         
         if (st.SUPER()!=null&&st.typeName()==null) {
-            System.out.println(st.getText());  
-            System.out.println(st.getText());
             return true;
         }        
         
         if (st.SUPER()!=null&&st.typeName()!=null) {
-            System.out.println(st.getText());  
-            System.out.println(st.getText());
             return true;
         }        
         
-        System.out.println(st.getText());        
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
@@ -1578,7 +1600,6 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         if (st==null) {
             return false;
         }
-        System.out.println(st.getText());        
         throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
     }
 
@@ -1658,9 +1679,25 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
             case "long": return "i64";
             case "int": return "i32";
             case "boolean": return "bool";
+            case "double": return "f64";
+            case "float": return "f64";
             case "void": return "()";
+            case "byte": return "u8";
             default: return javaType;
         }
     }
+    
+    private String rustTypeParam(String javaType) {
+        switch (javaType) {
+            case "long": return "i64";
+            case "int": return "i32";
+            case "boolean": return "bool";
+            case "double": return "f64";
+            case "float": return "f64";
+            case "void": return "()";
+            case "byte": return "u8";
+            default: return "&" + javaType;
+        }
+    }    
     
 }
