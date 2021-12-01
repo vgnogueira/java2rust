@@ -20,7 +20,7 @@ At this time you have to modify Main class to compile your code.
 
 There are 2 different methods todo so:
 
-1. compile(String srcFileName, String dstFileName) which reads a single file and generate its Rust counterpar.
+1. compileAT(String srcFileName, String dstFileName) which reads a single file and generate its Rust counterpar.
 
 2. compileProject(String srcPath, String dstPath) which traverses a every folder and compiles Java ones.
 
