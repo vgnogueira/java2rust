@@ -40,7 +40,7 @@ public class J2r {
         
         //compileAT("/home/fastway/Downloads/S3Rest.java", "/home/fastway/Downloads/S3Rest.rs");
         
-        compileAT("/opt/fastway/fastdialer_monitor/src/fastdialer/Trunk.java", "/home/fastway/Downloads/compilado.rs");
+        compileAT("/opt/fastway/fastdialer_dev/fastdialer_rust_lib/fastdialer_monitor/src/fastdialer/Trunk.java", "/home/fastway/Downloads/compilado.rs");
         
         System.out.println("\n\n FIM DO PROCESSAMENTO!!!");
     }
@@ -59,7 +59,9 @@ public class J2r {
         J2rAbstractTree j = new J2rAbstractTree();
         j.visit(tree);
         
-        return j.generate();
+        String rustSource = j.generate();
+                
+        return rustSource;
     }
 
     private static void compileProject(String srcPath, String dstPath) {

@@ -79,40 +79,45 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
 "#![allow(dead_code)]\n" +
 "#![allow(unused_variables)]\n" +
 "#![allow(unused_imports)]\n" +
-"\n" +
-"use crate::java_compat::ModJavaString;\n" +
-"use crate::java_compat::ModJavaString::JavaString;\n" +
-"use crate::java_compat::ModSystem::System;\n" +
-"use crate::java_compat::ModResultSet::ResultSet;\n" +
-"use crate::java_compat::ModThread::Thread;\n" 
-            );
-            rs.append("\n\n\n");
-
-            rs.append("use crate::fastdialer::dao::AcaoDAO::AcaoDAO;\n" +
-"use crate::fastdialer::dao::AgendaDAO::AgendaDAO;\n" +
-"use crate::fastdialer::dao::AsrDAO::AsrDAO;\n" +
-"use crate::fastdialer::dao::BlacklistDAO::BlacklistDAO;\n" +
-"use crate::fastdialer::dao::CallRelatedDAO::CallRelatedDAO;\n" +
-"use crate::fastdialer::dao::CampanhaDAO::CampanhaDAO;\n" +
-"use crate::fastdialer::dao::ChatDAO::ChatDAO;\n" +
-"use crate::fastdialer::dao::ChatMessageDAO::ChatMessageDAO;\n" +
-"use crate::fastdialer::dao::DAOFactory::DAOFactory;\n" +
-"use crate::fastdialer::dao::DbExternoDAO::DbExternoDAO;\n" +
-"use crate::fastdialer::dao::EventoDAO::EventoDAO;\n" +
-"use crate::fastdialer::dao::FastdialerExternoDAO::FastdialerExternoDAO;\n" +
-"use crate::fastdialer::dao::ListaTelDAO::ListaTelDAO;\n" +
-"use crate::fastdialer::dao::LogDAO::LogDAO;\n" +
-"use crate::fastdialer::dao::MailingDetalheDAO::MailingDetalheDAO;\n" +
-"use crate::fastdialer::dao::MonitorPbxDAO::MonitorPbxDAO;\n" +
-"use crate::fastdialer::dao::NotificacaoDAO::NotificacaoDAO;\n" +
-"use crate::fastdialer::dao::OngoingDAO::OngoingDAO;\n" +
-"use crate::fastdialer::dao::OperadorDAO::OperadorDAO;\n" +
-"use crate::fastdialer::dao::ParametroDAO::ParametroDAO;\n" +
-"use crate::fastdialer::dao::PredCallRecordDAO::PredCallRecordDAO;\n" +
-"use crate::fastdialer::dao::RamalDAO::RamalDAO;\n" +
-"use crate::fastdialer::dao::RotaDAO::RotaDAO;\n" +
-"use crate::fastdialer::dao::TabulacaoDAO::TabulacaoDAO;\n" +
-"use crate::fastdialer::dao::TrunkDAO::TrunkDAO;\n");
+"\n");
+            rs.append("use crate::fastdialer::dao::FastDialerDB::FastDialerDB;").append("\n");
+            rs.append("use crate::java_compat::ResultSet::ResultSet;").append("\n");
+            rs.append("use crate::java_compat::JavaString::JavaString;").append("\n");
+            rs.append("");
+            
+//"use crate::java_compat::ModJavaString;\n" +
+//"use crate::java_compat::ModJavaString::JavaString;\n" +
+//"use crate::java_compat::ModSystem::System;\n" +
+//"use crate::java_compat::ModResultSet::ResultSet;\n" +
+//"use crate::java_compat::ModThread::Thread;\n" 
+//            );
+//            rs.append("\n\n\n");
+//
+//            rs.append("use crate::fastdialer::dao::AcaoDAO::AcaoDAO;\n" +
+//"use crate::fastdialer::dao::AgendaDAO::AgendaDAO;\n" +
+//"use crate::fastdialer::dao::AsrDAO::AsrDAO;\n" +
+//"use crate::fastdialer::dao::BlacklistDAO::BlacklistDAO;\n" +
+//"use crate::fastdialer::dao::CallRelatedDAO::CallRelatedDAO;\n" +
+//"use crate::fastdialer::dao::CampanhaDAO::CampanhaDAO;\n" +
+//"use crate::fastdialer::dao::ChatDAO::ChatDAO;\n" +
+//"use crate::fastdialer::dao::ChatMessageDAO::ChatMessageDAO;\n" +
+//"use crate::fastdialer::dao::DAOFactory::DAOFactory;\n" +
+//"use crate::fastdialer::dao::DbExternoDAO::DbExternoDAO;\n" +
+//"use crate::fastdialer::dao::EventoDAO::EventoDAO;\n" +
+//"use crate::fastdialer::dao::FastdialerExternoDAO::FastdialerExternoDAO;\n" +
+//"use crate::fastdialer::dao::ListaTelDAO::ListaTelDAO;\n" +
+//"use crate::fastdialer::dao::LogDAO::LogDAO;\n" +
+//"use crate::fastdialer::dao::MailingDetalheDAO::MailingDetalheDAO;\n" +
+//"use crate::fastdialer::dao::MonitorPbxDAO::MonitorPbxDAO;\n" +
+//"use crate::fastdialer::dao::NotificacaoDAO::NotificacaoDAO;\n" +
+//"use crate::fastdialer::dao::OngoingDAO::OngoingDAO;\n" +
+//"use crate::fastdialer::dao::OperadorDAO::OperadorDAO;\n" +
+//"use crate::fastdialer::dao::ParametroDAO::ParametroDAO;\n" +
+//"use crate::fastdialer::dao::PredCallRecordDAO::PredCallRecordDAO;\n" +
+//"use crate::fastdialer::dao::RamalDAO::RamalDAO;\n" +
+//"use crate::fastdialer::dao::RotaDAO::RotaDAO;\n" +
+//"use crate::fastdialer::dao::TabulacaoDAO::TabulacaoDAO;\n" +
+//"use crate::fastdialer::dao::TrunkDAO::TrunkDAO;\n");
 
             rs.append("\n\n\n");
             
@@ -172,7 +177,18 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         //ALGUNS "AJUSTES"
         String rsfinal = rs.toString().replaceAll("while true", "loop");
             
-            System.out.println(rsfinal);
+        rsfinal = rsfinal.replaceAll("String\\.format", "format!");
+        rsfinal = rsfinal.replaceAll("db\\.", "self.db.");
+        
+        rsfinal = rsfinal.replaceAll("self.db.query\\(sql\\)", "self.db.query(&sql, &[])");
+        rsfinal = rsfinal.replaceAll("self.db.executeVoid\\(sql\\)", "self.db.executeVoid(&sql, &[])");
+        rsfinal = rsfinal.replaceAll("self.db.queryNextOrNull\\(sql\\)", "self.db.queryNextOrNull(&sql, &[])");
+        
+        rsfinal = rsfinal.replaceAll("%d", "{}");
+        rsfinal = rsfinal.replaceAll("%s", "{}");        
+        rsfinal = rsfinal.replaceAll("null", "None"); 
+        
+        System.out.println(rsfinal);
 
         
         return rsfinal;
@@ -342,7 +358,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         generateExpression(st.expression());
         generateStatementWithoutTrailingSubstatement(st.statementNoShortIf().statementWithoutTrailingSubstatement());
         //identa();
-        rs.append("else");
+        rs.append("else ");
         generateStatement(st.statement());
         return true;
     }
@@ -1470,7 +1486,7 @@ public class J2rAbstractTree extends Java9BaseVisitor<Integer> {
         
         if (st.StringLiteral()!=null) {
             rs.append(st.StringLiteral().getText());
-            rs.append(".to_string()");
+            //rs.append(".to_string()");
             return true;
         }
         
